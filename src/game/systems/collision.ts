@@ -2,7 +2,7 @@ import { PLAYER_HEIGHT, PLAYER_RADIUS } from "../core/config";
 
 type BlockReader = (x: number, y: number, z: number) => number;
 
-const SAMPLE_HEIGHTS = [0.15, 1.05, 1.95] as const;
+const SAMPLE_HEIGHTS = [1.05, 1.95, 2.75] as const;
 
 export function isBodyBlockedAt(x: number, y: number, z: number, getBlock: BlockReader) {
   const corners = [
@@ -31,7 +31,7 @@ export function isStandingOnGround(x: number, y: number, z: number, getBlock: Bl
     [x - PLAYER_RADIUS, z - PLAYER_RADIUS],
   ] as const;
 
-  const footY = Math.floor(y - PLAYER_HEIGHT - 0.05);
+  const footY = Math.floor(y - PLAYER_HEIGHT + 0.5);
   return corners.some(([sampleX, sampleZ]) => getBlock(Math.floor(sampleX), footY, Math.floor(sampleZ)) !== 0);
 }
 

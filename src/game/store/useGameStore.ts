@@ -128,6 +128,16 @@ export const useGameStore = create<GameState>((set, get) => ({
       return null;
     }
 
+    if (y <= 0) {
+      set({
+        miningTarget: null,
+        miningProgress: 0,
+        lastActionText: "The foundation will not yield.",
+        lastActionAt: performance.now(),
+      });
+      return null;
+    }
+
     const current = get();
     const hardness = BLOCK_HARDNESS[block];
     const nextProgress =

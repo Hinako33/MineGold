@@ -33,11 +33,11 @@ function carveSpawnSafeZone(world: WorldData) {
 }
 
 function tunnelCenterX(z: number) {
-  return Math.round(Math.sin(z * 0.08) * 4 + Math.sin(z * 0.035 + 2.4) * 2.5);
+  return Math.sin(z * 0.055) * 2.8 + Math.sin(z * 0.021 + 2.1) * 1.6;
 }
 
 function tunnelCenterY(z: number) {
-  return 3 + Math.round(Math.sin(z * 0.05 + 0.8) * 0.8 + Math.sin(z * 0.017) * 0.6);
+  return 3.1 + Math.sin(z * 0.038 + 0.8) * 0.55 + Math.sin(z * 0.015) * 0.35;
 }
 
 function branchDescriptor(segment: number, direction: -1 | 1) {
@@ -99,12 +99,12 @@ function isBranchAir(x: number, y: number, z: number) {
 function isTunnelAir(x: number, y: number, z: number) {
   const centerX = tunnelCenterX(z);
   const centerY = tunnelCenterY(z);
-  const dx = Math.abs(x - centerX);
+  const dx = x - centerX;
   const dy = y - centerY;
-  const radius = 2.9 + Math.sin(z * 0.06) * 0.45;
+  const radius = 3.2 + Math.sin(z * 0.045) * 0.3;
 
-  const mainTunnel = dx * dx / 7.2 + dy * dy / 3.8 < radius;
-  const sidePocket = hash3(Math.floor(x / 3), y, Math.floor(z / 5)) > 0.965 && dx < 4 && dy > -1;
+  const mainTunnel = dx * dx / 8.6 + dy * dy / 4.4 < radius;
+  const sidePocket = hash3(Math.floor(x / 3), y, Math.floor(z / 5)) > 0.972 && Math.abs(dx) < 4.5 && dy > -1.2;
   const branchTunnel = isBranchAir(x, y, z);
   return mainTunnel || sidePocket || branchTunnel;
 }

@@ -17,6 +17,8 @@ const GRAVITY = 24;
 const JUMP_HEIGHT = 1;
 const JUMP_SPEED = Math.sqrt(2 * GRAVITY * JUMP_HEIGHT);
 const START_POSITION = new THREE.Vector3(0, PLAYER_HEIGHT, 2);
+const MAX_GROUND_SNAP = 0.18;
+const FALL_RESET_Y = -2;
 
 const keyMap: Record<string, keyof KeyState> = {
   KeyW: "forward",
@@ -42,7 +44,8 @@ export function useFirstPersonMovement() {
   });
   const forward = useMemo(() => new THREE.Vector3(), []);
   const right = useMemo(() => new THREE.Vector3(), []);
-  const next = useMemo(() => new THREE.Vector3(), []);
+  const moveDelta = useMemo(() => new THREE.Vector3(), []);
+  const candidate = useMemo(() => new THREE.Vector3(), []);
   const velocityY = useRef(0);
   const jumpQueued = useRef(false);
 
@@ -87,7 +90,7 @@ export function useFirstPersonMovement() {
     forward.set(0, 0, Number(keys.current.backward) - Number(keys.current.forward));
     right.set(Number(keys.current.right) - Number(keys.current.left), 0, 0);
 
-    next.copy(camera.position);
+    moveDelta.set(0, 0, 0);
     if (forward.lengthSq() > 0 || right.lengthSq() > 0) {
       forward.applyQuaternion(camera.quaternion);
       forward.y = 0;
@@ -97,46 +100,68 @@ export function useFirstPersonMovement() {
       right.y = 0;
       right.normalize();
 
-      next.addScaledVector(forward, MOVE_SPEED * delta);
-      next.addScaledVector(right, MOVE_SPEED * delta);
+      moveDelta.addScaledVector(forward, MOVE_SPEED * delta);
+      moveDelta.addScaledVector(right, MOVE_SPEED * delta);
+    }
+
+    if (moveDelta.lengthSq() > 0) {
+      candidate.set(
+        camera.position.x + moveDelta.x,
+        camera.position.y,
+        camera.position.z + moveDelta.z,
+      );
+      if (!isBodyBlockedAt(candidate.x, candidate.y, candidate.z, getBlock)) {
+        camera.position.x = candidate.x;
+        camera.position.z = candidate.z;
+      } else {
+        candidate.set(camera.position.x + moveDelta.x, camera.position.y, camera.position.z);
+        if (!isBodyBlockedAt(candidate.x, candidate.y, candidate.z, getBlock)) {
+          camera.position.x = candidate.x;
+        }
+
+        candidate.set(camera.position.x, camera.position.y, camera.position.z + moveDelta.z);
+        if (!isBodyBlockedAt(candidate.x, candidate.y, candidate.z, getBlock)) {
+          camera.position.z = candidate.z;
+        }
+      }
     }
 
     velocityY.current -= GRAVITY * delta;
-    next.y += velocityY.current * delta;
+    const nextY = camera.position.y + velocityY.current * delta;
+    candidate.set(camera.position.x, nextY, camera.position.z);
 
-    if (!isBodyBlockedAt(next.x, next.y, next.z, getBlock)) {
-      camera.position.copy(next);
+    if (!isBodyBlockedAt(candidate.x, candidate.y, candidate.z, getBlock)) {
+      camera.position.y = nextY;
+    } else if (velocityY.current > 0) {
+      velocityY.current = 0;
     } else {
-      const slideX = new THREE.Vector3(next.x, camera.position.y, camera.position.z);
-      if (!isBodyBlockedAt(slideX.x, slideX.y, slideX.z, getBlock)) {
-        camera.position.copy(slideX);
-      } else {
-        const slideZ = new THREE.Vector3(camera.position.x, camera.position.y, next.z);
-        if (!isBodyBlockedAt(slideZ.x, slideZ.y, slideZ.z, getBlock)) {
-          camera.position.copy(slideZ);
-        }
-      }
-
-      if (velocityY.current !== 0) {
-        const verticalOnly = new THREE.Vector3(camera.position.x, next.y, camera.position.z);
-        if (!isBodyBlockedAt(verticalOnly.x, verticalOnly.y, verticalOnly.z, getBlock)) {
-          camera.position.copy(verticalOnly);
-        } else {
-          velocityY.current = Math.min(velocityY.current, 0);
-        }
-      }
-    }
-
-    const afterMoveGrounded = isStandingOnGround(camera.position.x, camera.position.y, camera.position.z, getBlock);
-    if (afterMoveGrounded && velocityY.current <= 0) {
-      const snappedY = Math.floor(camera.position.y - PLAYER_HEIGHT - 0.05) + 1 + PLAYER_HEIGHT;
-      if (!isBodyBlockedAt(camera.position.x, snappedY, camera.position.z, getBlock)) {
+      const snappedY = Math.floor(camera.position.y - PLAYER_HEIGHT + 0.5) + PLAYER_HEIGHT;
+      const snapDistance = snappedY - camera.position.y;
+      if (
+        snapDistance >= 0 &&
+        snapDistance <= MAX_GROUND_SNAP &&
+        !isBodyBlockedAt(camera.position.x, snappedY, camera.position.z, getBlock)
+      ) {
         camera.position.y = snappedY;
       }
       velocityY.current = 0;
     }
 
-    if (camera.position.y < START_POSITION.y - 4) {
+    const afterMoveGrounded = isStandingOnGround(camera.position.x, camera.position.y, camera.position.z, getBlock);
+    if (afterMoveGrounded && velocityY.current < 0) {
+      const snappedY = Math.floor(camera.position.y - PLAYER_HEIGHT + 0.5) + PLAYER_HEIGHT;
+      const snapDistance = snappedY - camera.position.y;
+      if (
+        snapDistance >= 0 &&
+        snapDistance <= MAX_GROUND_SNAP &&
+        !isBodyBlockedAt(camera.position.x, snappedY, camera.position.z, getBlock)
+      ) {
+        camera.position.y = snappedY;
+      }
+      velocityY.current = 0;
+    }
+
+    if (camera.position.y < FALL_RESET_Y) {
       camera.position.copy(START_POSITION);
       velocityY.current = 0;
     }
