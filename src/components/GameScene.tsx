@@ -11,17 +11,17 @@ export function GameScene() {
       gl={{ antialias: false }}
       dpr={[1, 1.5]}
     >
-      <color attach="background" args={["#070605"]} />
-      <fog attach="fog" args={["#070605", 8, 34]} />
+      <color attach="background" args={["#020203"]} />
+      <fog attach="fog" args={["#020203", 4, 20]} />
 
       <Suspense fallback={null}>
         <CaveWorld />
       </Suspense>
 
       <EffectComposer>
-        <Bloom intensity={0.32} luminanceThreshold={0.45} mipmapBlur />
-        <Noise opacity={0.08} />
-        <Vignette eskil={false} offset={0.22} darkness={0.9} />
+        <Bloom intensity={0.55} luminanceThreshold={0.28} mipmapBlur />
+        <Noise opacity={0.16} />
+        <Vignette eskil={false} offset={0.12} darkness={0.96} />
       </EffectComposer>
     </Canvas>
   );

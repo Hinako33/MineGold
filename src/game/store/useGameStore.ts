@@ -28,6 +28,11 @@ interface GameState {
   chunks: WorldData["chunks"];
   loadedChunks: number;
   minedBlocks: number;
+  collectedMemories: number;
+  totalMemories: number;
+  fearLevel: number;
+  gameState: "stalking" | "escaped" | "caught";
+  objectiveText: string;
   inventory: PlaceableInventory;
   pointerLocked: boolean;
   selectedHotbarBlock: PlaceableBlockId;
@@ -41,6 +46,11 @@ interface GameState {
   setSelectedBlock: (name: string | null) => void;
   setTargetBlock: (target: TargetBlock | null) => void;
   selectHotbarBlock: (block: PlaceableBlockId) => void;
+  setFearLevel: (fearLevel: number) => void;
+  setGameState: (gameState: GameState["gameState"]) => void;
+  collectMemory: () => void;
+  setObjectiveText: (objectiveText: string) => void;
+  setLastActionText: (text: string) => void;
   ensureStreamedChunks: (x: number, z: number) => void;
   getBlock: (x: number, y: number, z: number) => BlockId;
   damageBlock: (x: number, y: number, z: number, delta: number) => BlockId | null;
@@ -59,6 +69,11 @@ export const useGameStore = create<GameState>((set, get) => ({
   chunks: initialWorld.chunks,
   loadedChunks: getLoadedChunkCount(initialWorld),
   minedBlocks: 0,
+  collectedMemories: 0,
+  totalMemories: 4,
+  fearLevel: 8,
+  gameState: "stalking",
+  objectiveText: "Follow the tunnel and recover the lost memories.",
   inventory: {
     1: 16,
     2: 0,
@@ -76,6 +91,25 @@ export const useGameStore = create<GameState>((set, get) => ({
   setSelectedBlock: (name) => set({ selectedBlockName: name }),
   setTargetBlock: (target) => set({ targetBlock: target }),
   selectHotbarBlock: (block) => set({ selectedHotbarBlock: block }),
+  setFearLevel: (fearLevel) => set({ fearLevel }),
+  setGameState: (gameState) => set({ gameState }),
+  collectMemory: () =>
+    set((state) => {
+      const nextCollected = Math.min(state.collectedMemories + 1, state.totalMemories);
+      const readyForExit = nextCollected >= state.totalMemories;
+      return {
+        collectedMemories: nextCollected,
+        objectiveText: readyForExit
+          ? "The exit has opened deeper in the mine. Keep moving."
+          : "A whisper answered. Keep going before it finds you.",
+        lastActionText: readyForExit
+          ? "All memories recovered. The gate ahead is awake."
+          : "You recovered a memory fragment.",
+        lastActionAt: performance.now(),
+      };
+    }),
+  setObjectiveText: (objectiveText) => set({ objectiveText }),
+  setLastActionText: (text) => set({ lastActionText: text, lastActionAt: performance.now() }),
   ensureStreamedChunks: (x, z) => {
     const world = get().world;
     ensureWorldAround(world, x, z);

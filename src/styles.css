@@ -1,13 +1,13 @@
 :root {
   color-scheme: dark;
-  font-family: "Courier New", monospace;
-  --bg: #090909;
-  --panel: rgba(11, 12, 16, 0.72);
-  --panel-border: rgba(255, 255, 255, 0.12);
-  --text: #f5efe2;
-  --muted: #bcae93;
-  --accent: #e19545;
-  --danger: #f66f53;
+  font-family: Georgia, "Times New Roman", serif;
+  --bg: #040405;
+  --panel: rgba(8, 7, 10, 0.7);
+  --panel-border: rgba(201, 225, 232, 0.12);
+  --text: #f2ece6;
+  --muted: #a99998;
+  --accent: #b8e7ff;
+  --danger: #bb384d;
 }
 
 * {
@@ -20,8 +20,9 @@ body,
   margin: 0;
   min-height: 100%;
   background:
-    radial-gradient(circle at top, rgba(225, 149, 69, 0.14), transparent 38%),
-    linear-gradient(180deg, #19120e 0%, #090909 100%);
+    radial-gradient(circle at top, rgba(139, 207, 255, 0.08), transparent 32%),
+    radial-gradient(circle at 50% 120%, rgba(122, 14, 22, 0.18), transparent 34%),
+    linear-gradient(180deg, #0f0b10 0%, #040405 100%);
 }
 
 body {
@@ -60,8 +61,8 @@ select {
 .hud__crosshair::after {
   content: "";
   position: absolute;
-  background: rgba(255, 243, 220, 0.9);
-  box-shadow: 0 0 8px rgba(255, 224, 170, 0.45);
+  background: rgba(222, 236, 242, 0.7);
+  box-shadow: 0 0 8px rgba(184, 231, 255, 0.25);
 }
 
 .hud__crosshair::before {
@@ -108,21 +109,27 @@ select {
   padding: 12px 14px;
   background: var(--panel);
   border: 1px solid var(--panel-border);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
 }
 
 .hud__label {
   color: var(--muted);
   font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.18em;
 }
 
 .hud__value {
   margin-top: 4px;
   font-size: 20px;
   color: var(--text);
+}
+
+.hud__value--compact {
+  max-width: 240px;
+  font-size: 15px;
+  line-height: 1.4;
 }
 
 .hud__meter {
@@ -135,8 +142,13 @@ select {
 
 .hud__meter-fill {
   height: 100%;
-  background: linear-gradient(90deg, #f1d68b 0%, #e19545 100%);
-  box-shadow: 0 0 12px rgba(225, 149, 69, 0.35);
+  background: linear-gradient(90deg, #b8e7ff 0%, #7eb7d8 100%);
+  box-shadow: 0 0 12px rgba(146, 210, 255, 0.28);
+}
+
+.hud__meter-fill--danger {
+  background: linear-gradient(90deg, #7b1220 0%, #bb384d 100%);
+  box-shadow: 0 0 14px rgba(187, 56, 77, 0.35);
 }
 
 .hud__tips {
@@ -154,51 +166,12 @@ select {
 .hud__status {
   color: var(--accent);
   font-size: 14px;
+  max-width: 300px;
+  line-height: 1.5;
 }
 
 .hud__status--muted {
   color: var(--text);
-}
-
-.hotbar {
-  position: absolute;
-  left: 50%;
-  bottom: 28px;
-  display: flex;
-  gap: 10px;
-  transform: translateX(-50%);
-}
-
-.hotbar__slot {
-  min-width: 108px;
-  padding: 10px 12px;
-  background: rgba(10, 10, 12, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
-}
-
-.hotbar__slot--active {
-  border-color: rgba(225, 149, 69, 0.9);
-  box-shadow: 0 0 0 1px rgba(225, 149, 69, 0.45), 0 10px 26px rgba(0, 0, 0, 0.32);
-}
-
-.hotbar__key {
-  color: var(--muted);
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-}
-
-.hotbar__name {
-  margin-top: 6px;
-  color: var(--text);
-  font-size: 15px;
-}
-
-.hotbar__count {
-  margin-top: 4px;
-  color: var(--accent);
-  font-size: 18px;
 }
 
 @media (max-width: 720px) {
@@ -215,17 +188,5 @@ select {
 
   .hud__stack {
     align-items: stretch;
-  }
-
-  .hotbar {
-    bottom: 16px;
-    width: calc(100vw - 24px);
-    gap: 6px;
-  }
-
-  .hotbar__slot {
-    min-width: 0;
-    flex: 1;
-    padding: 10px;
   }
 }

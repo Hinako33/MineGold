@@ -3,13 +3,12 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import type { PointerLockControls as PointerLockControlsImpl } from "three-stdlib";
-import { BLOCK_AIR, BLOCK_LABELS, BLOCK_PALETTE, PLACEABLE_BLOCKS } from "../game/core/blocks";
+import { BLOCK_AIR, BLOCK_LABELS, BLOCK_PALETTE } from "../game/core/blocks";
 import { PLAYER_HEIGHT } from "../game/core/config";
 import { worldToBlock } from "../game/core/coords";
 import { getTorchPositions } from "../game/core/world";
 import { ChunkMeshes } from "../game/render/ChunkMeshes";
 import { useGameStore } from "../game/store/useGameStore";
-import { intersectsPlayerSpace } from "../game/systems/collision";
 import { useFirstPersonMovement } from "../game/systems/useFirstPersonMovement";
 import { usePixelAudio } from "../game/systems/usePixelAudio";
 import { DamageOverlay } from "./DamageOverlay";
@@ -18,7 +17,6 @@ import { TargetOutline } from "./TargetOutline";
 
 interface VoxelHit {
   block: { x: number; y: number; z: number };
-  place: { x: number; y: number; z: number };
   blockId: number;
   point: THREE.Vector3;
 }
@@ -31,12 +29,20 @@ interface BurstParticle {
   createdAt: number;
 }
 
-interface PlacementPreviewState {
-  x: number;
-  y: number;
-  z: number;
-  canPlace: boolean;
+interface MemoryShard {
+  id: string;
+  position: [number, number, number];
+  whisper: string;
 }
+
+const MEMORY_SHARDS: MemoryShard[] = [
+  { id: "m1", position: [1.2, 2.4, 20], whisper: "Something followed us below." },
+  { id: "m2", position: [-3.2, 3.1, 42], whisper: "Do not trust the breathing behind you." },
+  { id: "m3", position: [4.4, 2.8, 69], whisper: "The mine remembers every footstep." },
+  { id: "m4", position: [-2.8, 3.2, 96], whisper: "The exit opens only for the last witness." },
+];
+
+const EXIT_POSITION: [number, number, number] = [0, 2.8, 124];
 
 function createBurst(origin: THREE.Vector3, color: string) {
   return Array.from({ length: 8 }, (_, index): BurstParticle => {
@@ -56,22 +62,31 @@ export function CaveWorld() {
   const raycaster = useMemo(() => new THREE.Raycaster(), []);
   const direction = useMemo(() => new THREE.Vector3(), []);
   const fallbackNormal = useMemo(() => new THREE.Vector3(), []);
+  const tempVec = useMemo(() => new THREE.Vector3(), []);
   const leftMouseDown = useRef(false);
+  const lastFearPulse = useRef(0);
+  const lastStreamChunk = useRef("");
+  const collectedMemoryIds = useRef<Set<string>>(new Set());
+
   const setPointerLocked = useGameStore((state) => state.setPointerLocked);
   const setSelectedBlock = useGameStore((state) => state.setSelectedBlock);
   const setTargetBlock = useGameStore((state) => state.setTargetBlock);
-  const selectHotbarBlock = useGameStore((state) => state.selectHotbarBlock);
-  const selectedHotbarBlock = useGameStore((state) => state.selectedHotbarBlock);
   const damageBlock = useGameStore((state) => state.damageBlock);
   const resetMining = useGameStore((state) => state.resetMining);
-  const placeBlock = useGameStore((state) => state.placeBlock);
   const getBlock = useGameStore((state) => state.getBlock);
   const ensureStreamedChunks = useGameStore((state) => state.ensureStreamedChunks);
+  const collectMemory = useGameStore((state) => state.collectMemory);
+  const setFearLevel = useGameStore((state) => state.setFearLevel);
+  const setGameState = useGameStore((state) => state.setGameState);
+  const setLastActionText = useGameStore((state) => state.setLastActionText);
+  const setObjectiveText = useGameStore((state) => state.setObjectiveText);
+  const gameState = useGameStore((state) => state.gameState);
+  const collectedMemories = useGameStore((state) => state.collectedMemories);
+  const totalMemories = useGameStore((state) => state.totalMemories);
+
   const camera = useThree((state) => state.camera);
   const scene = useThree((state) => state.scene);
   const [bursts, setBursts] = useState<BurstParticle[]>([]);
-  const [placementPreview, setPlacementPreview] = useState<PlacementPreviewState | null>(null);
-  const lastStreamChunk = useRef<string>("");
   const audio = usePixelAudio();
 
   useFirstPersonMovement();
@@ -79,7 +94,7 @@ export function CaveWorld() {
   const pickVoxel = () => {
     camera.getWorldDirection(direction);
     raycaster.set(camera.position, direction.normalize());
-    raycaster.far = 6;
+    raycaster.far = 5;
 
     const hits = raycaster.intersectObjects(scene.children, true);
     for (const hit of hits) {
@@ -94,10 +109,8 @@ export function CaveWorld() {
         continue;
       }
 
-      const place = worldToBlock(hit.point.clone().addScaledVector(faceNormal, 0.01));
       return {
         block,
-        place,
         blockId,
         point: hit.point.clone(),
       } satisfies VoxelHit;
@@ -127,55 +140,18 @@ export function CaveWorld() {
       event.preventDefault();
     };
 
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code === "Digit1") {
-        selectHotbarBlock(PLACEABLE_BLOCKS[0]);
-      } else if (event.code === "Digit2") {
-        selectHotbarBlock(PLACEABLE_BLOCKS[1]);
-      } else if (event.code === "Digit3") {
-        selectHotbarBlock(PLACEABLE_BLOCKS[2]);
-      }
-    };
-
     const onMouseDown = (event: MouseEvent) => {
       if (document.pointerLockElement === null) {
         controlsRef.current?.lock();
         return;
       }
 
+      if (gameState !== "stalking") {
+        return;
+      }
+
       if (event.button === 0) {
         leftMouseDown.current = true;
-        return;
-      }
-
-      if (event.button !== 2) {
-        return;
-      }
-
-      const hit = pickVoxel();
-      if (!hit) {
-        return;
-      }
-
-      const canPlace =
-        getBlock(hit.place.x, hit.place.y, hit.place.z) === BLOCK_AIR &&
-        !intersectsPlayerSpace(
-          hit.place.x,
-          hit.place.y,
-          hit.place.z,
-          camera.position.x,
-          camera.position.y,
-          camera.position.z,
-        );
-
-      if (!canPlace) {
-        return;
-      }
-
-      const placed = placeBlock(hit.place.x, hit.place.y, hit.place.z, selectedHotbarBlock);
-      if (placed) {
-        audio.playPlace();
-        setBursts((current) => [...current, ...createBurst(hit.point, BLOCK_PALETTE[selectedHotbarBlock])]);
       }
     };
 
@@ -187,23 +163,31 @@ export function CaveWorld() {
     };
 
     window.addEventListener("contextmenu", onContextMenu);
-    window.addEventListener("keydown", onKeyDown);
     window.addEventListener("mousedown", onMouseDown);
     window.addEventListener("mouseup", onMouseUp);
     return () => {
       window.removeEventListener("contextmenu", onContextMenu);
-      window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [audio, camera.position, getBlock, placeBlock, resetMining, selectHotbarBlock, selectedHotbarBlock]);
+  }, [gameState, resetMining]);
 
-  useFrame((_, delta) => {
+  useEffect(() => {
+    setObjectiveText("Follow the tunnel and recover the lost memories.");
+  }, [setObjectiveText]);
+
+  useFrame((state, delta) => {
+    const time = state.clock.elapsedTime;
+
+    if (gameState !== "stalking") {
+      leftMouseDown.current = false;
+      resetMining();
+    }
+
     const hit = pickVoxel();
     if (!hit) {
       setSelectedBlock(null);
       setTargetBlock(null);
-      setPlacementPreview(null);
       if (leftMouseDown.current) {
         resetMining();
       }
@@ -211,28 +195,12 @@ export function CaveWorld() {
       setSelectedBlock(BLOCK_LABELS[hit.blockId] ?? null);
       setTargetBlock(hit.block);
 
-      const canPlace =
-        getBlock(hit.place.x, hit.place.y, hit.place.z) === BLOCK_AIR &&
-        !intersectsPlayerSpace(
-          hit.place.x,
-          hit.place.y,
-          hit.place.z,
-          camera.position.x,
-          camera.position.y,
-          camera.position.z,
-        );
-      setPlacementPreview({
-        x: hit.place.x,
-        y: hit.place.y,
-        z: hit.place.z,
-        canPlace,
-      });
-
-      if (leftMouseDown.current) {
+      if (leftMouseDown.current && gameState === "stalking") {
         audio.playMineTick();
-        const mined = damageBlock(hit.block.x, hit.block.y, hit.block.z, delta);
+        const mined = damageBlock(hit.block.x, hit.block.y, hit.block.z, delta * 0.8);
         if (mined !== null) {
           audio.playBreak();
+          setLastActionText("The wall gives way with a dry scream.");
           setBursts((current) => [...current, ...createBurst(hit.point, BLOCK_PALETTE[mined])]);
         }
       }
@@ -244,6 +212,50 @@ export function CaveWorld() {
     if (lastStreamChunk.current !== streamKey) {
       lastStreamChunk.current = streamKey;
       ensureStreamedChunks(camera.position.x, camera.position.z);
+    }
+
+    for (const shard of MEMORY_SHARDS) {
+      if (collectedMemoryIds.current.has(shard.id)) {
+        continue;
+      }
+
+      tempVec.set(...shard.position);
+      if (tempVec.distanceTo(camera.position) < 1.45) {
+        collectedMemoryIds.current.add(shard.id);
+        collectMemory();
+        setLastActionText(shard.whisper);
+        audio.playPlace();
+      }
+    }
+
+    const progress = THREE.MathUtils.clamp(camera.position.z / EXIT_POSITION[2], 0, 1);
+    const shadowZ = camera.position.z - (18 - progress * 8) + Math.sin(time * 0.8) * 1.5;
+    const shadowDistance = camera.position.z - shadowZ;
+    const dreadFromShadow = THREE.MathUtils.clamp(100 - shadowDistance * 6, 0, 100);
+    const dreadFromTime = Math.min(22, time * 0.9);
+    const finalFear = THREE.MathUtils.clamp(dreadFromShadow + dreadFromTime, 0, 100);
+    setFearLevel(finalFear);
+
+    if (gameState === "stalking" && finalFear > 82 && time - lastFearPulse.current > 3.2) {
+      lastFearPulse.current = time;
+      setLastActionText("It is close enough to hear you breathe.");
+    }
+
+    if (gameState === "stalking" && shadowDistance < 3.2) {
+      setGameState("caught");
+      setObjectiveText("The tunnel sealed behind your last step.");
+      setLastActionText("The dark reached you.");
+    }
+
+    if (
+      gameState === "stalking" &&
+      collectedMemories >= totalMemories &&
+      camera.position.distanceTo(tempVec.set(...EXIT_POSITION)) < 2.6
+    ) {
+      setGameState("escaped");
+      setFearLevel(0);
+      setObjectiveText("You escaped with the mine's memories.");
+      setLastActionText("Cold air finally answers back.");
     }
 
     setBursts((current) =>
@@ -262,44 +274,82 @@ export function CaveWorld() {
     );
   });
 
-  const torchPositions = getTorchPositions(camera.position.z);
+  const torchPositions = getTorchPositions(camera.position.z)
+    .filter((_, index) => index % 2 === 0)
+    .map((torch, index) => ({
+      ...torch,
+      dead: index % 3 === 0,
+    }));
+
+  const shadowZ = camera.position.z - (18 - Math.min(camera.position.z / EXIT_POSITION[2], 1) * 8);
+  const lampFlicker = 1.4 + Math.sin(performance.now() * 0.007) * 0.2;
+  const exitReady = collectedMemories >= totalMemories;
 
   return (
     <>
-      <ambientLight intensity={0.18} color="#c89d72" />
-      <hemisphereLight intensity={0.3} color="#f0b780" groundColor="#120d0c" />
-      <pointLight position={[camera.position.x, PLAYER_HEIGHT + 0.6, camera.position.z + 0.2]} intensity={2.8} distance={7} color="#ffd2a1" />
+      <ambientLight intensity={0.04} color="#70544c" />
+      <hemisphereLight intensity={0.08} color="#634b43" groundColor="#040404" />
+      <pointLight
+        position={[camera.position.x, PLAYER_HEIGHT + 0.35, camera.position.z + 0.15]}
+        intensity={lampFlicker}
+        distance={5.5}
+        color="#f7d2b2"
+      />
 
       <ChunkMeshes />
       <TargetOutline />
       <DamageOverlay />
       <HeldPickaxe />
 
-      {placementPreview && (
-        <mesh position={[placementPreview.x + 0.5, placementPreview.y + 0.5, placementPreview.z + 0.5]}>
-          <boxGeometry args={[1.02, 1.02, 1.02]} />
-          <meshBasicMaterial
-            color={placementPreview.canPlace ? "#8de1b5" : "#f66f53"}
-            transparent
-            opacity={0.24}
-            wireframe
-          />
-        </mesh>
-      )}
-
       {torchPositions.map((torch, index) => (
         <group key={`${torch.x}:${torch.y}:${torch.z}:${index}`} position={[torch.x, torch.y, torch.z]}>
           <mesh position={[0, -0.1, 0]}>
-            <boxGeometry args={[0.14, 0.78, 0.14]} />
-            <meshStandardMaterial color="#7d4f29" />
+            <boxGeometry args={[0.12, 0.72, 0.12]} />
+            <meshStandardMaterial color="#3d2b21" />
           </mesh>
-          <mesh position={[0, 0.38, 0]}>
-            <boxGeometry args={[0.18, 0.16, 0.18]} />
-            <meshStandardMaterial color="#ffb46d" emissive="#ff9a3d" emissiveIntensity={1.2} />
+          <mesh position={[0, 0.28, 0]}>
+            <boxGeometry args={[0.16, 0.14, 0.16]} />
+            <meshStandardMaterial
+              color={torch.dead ? "#4e392f" : "#ffb17a"}
+              emissive={torch.dead ? "#000000" : "#ff7f50"}
+              emissiveIntensity={torch.dead ? 0 : 1.1}
+            />
           </mesh>
-          <pointLight position={[0, 0.45, 0]} intensity={7} distance={10} color="#ff9d57" />
+          {!torch.dead && (
+            <pointLight position={[0, 0.34, 0]} intensity={2.8} distance={5.5} color="#ff8d57" />
+          )}
         </group>
       ))}
+
+      {MEMORY_SHARDS.filter((shard) => !collectedMemoryIds.current.has(shard.id)).map((shard) => (
+        <group key={shard.id} position={shard.position}>
+          <mesh>
+            <octahedronGeometry args={[0.34, 0]} />
+            <meshStandardMaterial color="#d4f3ff" emissive="#8ddfff" emissiveIntensity={1.5} />
+          </mesh>
+          <pointLight intensity={2.4} distance={3.4} color="#89dfff" />
+        </group>
+      ))}
+
+      <group position={[0, 2.2, shadowZ]}>
+        <mesh scale={[1.4, 2.8, 1]}>
+          <sphereGeometry args={[0.8, 18, 18]} />
+          <meshStandardMaterial color="#100607" emissive="#2f0810" emissiveIntensity={0.5} transparent opacity={0.72} />
+        </mesh>
+        <pointLight position={[0, 0.3, 0.3]} intensity={1.2} distance={4.2} color="#7a0e16" />
+      </group>
+
+      <group position={EXIT_POSITION}>
+        <mesh>
+          <torusGeometry args={[exitReady ? 1.35 : 1.05, 0.12, 16, 60]} />
+          <meshStandardMaterial
+            color={exitReady ? "#bbf6ff" : "#422e35"}
+            emissive={exitReady ? "#8cdcff" : "#13080c"}
+            emissiveIntensity={exitReady ? 1.9 : 0.2}
+          />
+        </mesh>
+        {exitReady && <pointLight intensity={3.6} distance={6} color="#9ce7ff" />}
+      </group>
 
       {bursts.map((particle) => (
         <mesh key={particle.id} position={particle.position}>
