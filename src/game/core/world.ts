@@ -21,6 +21,17 @@ function editKey(x: number, y: number, z: number) {
   return `${x},${y},${z}`;
 }
 
+function carveSpawnSafeZone(world: WorldData) {
+  for (let x = -3; x <= 3; x += 1) {
+    for (let z = -2; z <= 6; z += 1) {
+      world.edits[editKey(x, 0, z)] = BLOCK_STONE;
+      for (let y = 1; y <= 5; y += 1) {
+        world.edits[editKey(x, y, z)] = BLOCK_AIR;
+      }
+    }
+  }
+}
+
 function tunnelCenterX(z: number) {
   return Math.round(Math.sin(z * 0.08) * 4 + Math.sin(z * 0.035 + 2.4) * 2.5);
 }
@@ -237,6 +248,7 @@ export function ensureWorldAround(world: WorldData, x: number, z: number) {
 
 export function createInitialWorld(): WorldData {
   const world: WorldData = { chunks: {}, edits: {} };
+  carveSpawnSafeZone(world);
   ensureWorldAround(world, 0, 2);
   return world;
 }
