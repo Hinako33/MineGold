@@ -16,14 +16,18 @@
 
 - Chunk-based voxel world data
 - Streamed chunk loading around the player with far-chunk pruning
+- Layered main tunnels with deterministic side-branch caves
 - Exposed-face mesh generation with atlas UVs
 - Procedural pixel-art texture atlas
 - First-person mouse look with pointer lock
-- WASD movement with simple collision checks
+- WASD movement with collision checks and slide correction
 - Hold-to-mine block damage with crack overlay stages
 - Center raycast mining and right-click block placement
+- Placement preview with valid/invalid feedback
 - Hotbar block selection with inventory counts
 - First-person pickaxe model with swing feedback
+- Procedural chip-tune style mining and placement sounds
+- Torch lights and denser cave fog for atmosphere
 - Target outline and impact burst particles
 
 ## Project structure

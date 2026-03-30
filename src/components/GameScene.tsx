@@ -1,6 +1,6 @@
 import { Canvas } from "@react-three/fiber";
 import { Suspense } from "react";
-import { EffectComposer, Noise, Vignette } from "@react-three/postprocessing";
+import { Bloom, EffectComposer, Noise, Vignette } from "@react-three/postprocessing";
 import { CaveWorld } from "./CaveWorld";
 
 export function GameScene() {
@@ -11,15 +11,16 @@ export function GameScene() {
       gl={{ antialias: false }}
       dpr={[1, 1.5]}
     >
-      <color attach="background" args={["#090909"]} />
-      <fog attach="fog" args={["#090909", 12, 48]} />
+      <color attach="background" args={["#070605"]} />
+      <fog attach="fog" args={["#070605", 8, 34]} />
 
       <Suspense fallback={null}>
         <CaveWorld />
       </Suspense>
 
       <EffectComposer>
-        <Noise opacity={0.05} />
+        <Bloom intensity={0.32} luminanceThreshold={0.45} mipmapBlur />
+        <Noise opacity={0.08} />
         <Vignette eskil={false} offset={0.22} darkness={0.9} />
       </EffectComposer>
     </Canvas>

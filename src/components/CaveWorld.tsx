@@ -6,9 +6,12 @@ import type { PointerLockControls as PointerLockControlsImpl } from "three-stdli
 import { BLOCK_AIR, BLOCK_LABELS, BLOCK_PALETTE, PLACEABLE_BLOCKS } from "../game/core/blocks";
 import { PLAYER_HEIGHT } from "../game/core/config";
 import { worldToBlock } from "../game/core/coords";
+import { getTorchPositions } from "../game/core/world";
 import { ChunkMeshes } from "../game/render/ChunkMeshes";
 import { useGameStore } from "../game/store/useGameStore";
+import { intersectsPlayerSpace } from "../game/systems/collision";
 import { useFirstPersonMovement } from "../game/systems/useFirstPersonMovement";
+import { usePixelAudio } from "../game/systems/usePixelAudio";
 import { DamageOverlay } from "./DamageOverlay";
 import { HeldPickaxe } from "./HeldPickaxe";
 import { TargetOutline } from "./TargetOutline";
@@ -26,6 +29,13 @@ interface BurstParticle {
   velocity: THREE.Vector3;
   color: string;
   createdAt: number;
+}
+
+interface PlacementPreviewState {
+  x: number;
+  y: number;
+  z: number;
+  canPlace: boolean;
 }
 
 function createBurst(origin: THREE.Vector3, color: string) {
@@ -60,7 +70,9 @@ export function CaveWorld() {
   const camera = useThree((state) => state.camera);
   const scene = useThree((state) => state.scene);
   const [bursts, setBursts] = useState<BurstParticle[]>([]);
+  const [placementPreview, setPlacementPreview] = useState<PlacementPreviewState | null>(null);
   const lastStreamChunk = useRef<string>("");
+  const audio = usePixelAudio();
 
   useFirstPersonMovement();
 
@@ -145,17 +157,24 @@ export function CaveWorld() {
         return;
       }
 
-      const distanceToPlayer =
-        Math.abs(hit.place.x + 0.5 - camera.position.x) < 0.7 &&
-        Math.abs(hit.place.y + 0.5 - camera.position.y) < 1.6 &&
-        Math.abs(hit.place.z + 0.5 - camera.position.z) < 0.7;
+      const canPlace =
+        getBlock(hit.place.x, hit.place.y, hit.place.z) === BLOCK_AIR &&
+        !intersectsPlayerSpace(
+          hit.place.x,
+          hit.place.y,
+          hit.place.z,
+          camera.position.x,
+          camera.position.y,
+          camera.position.z,
+        );
 
-      if (distanceToPlayer) {
+      if (!canPlace) {
         return;
       }
 
       const placed = placeBlock(hit.place.x, hit.place.y, hit.place.z, selectedHotbarBlock);
       if (placed) {
+        audio.playPlace();
         setBursts((current) => [...current, ...createBurst(hit.point, BLOCK_PALETTE[selectedHotbarBlock])]);
       }
     };
@@ -177,13 +196,14 @@ export function CaveWorld() {
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [camera.position, placeBlock, resetMining, selectHotbarBlock, selectedHotbarBlock]);
+  }, [audio, camera.position, getBlock, placeBlock, resetMining, selectHotbarBlock, selectedHotbarBlock]);
 
   useFrame((_, delta) => {
     const hit = pickVoxel();
     if (!hit) {
       setSelectedBlock(null);
       setTargetBlock(null);
+      setPlacementPreview(null);
       if (leftMouseDown.current) {
         resetMining();
       }
@@ -191,9 +211,28 @@ export function CaveWorld() {
       setSelectedBlock(BLOCK_LABELS[hit.blockId] ?? null);
       setTargetBlock(hit.block);
 
+      const canPlace =
+        getBlock(hit.place.x, hit.place.y, hit.place.z) === BLOCK_AIR &&
+        !intersectsPlayerSpace(
+          hit.place.x,
+          hit.place.y,
+          hit.place.z,
+          camera.position.x,
+          camera.position.y,
+          camera.position.z,
+        );
+      setPlacementPreview({
+        x: hit.place.x,
+        y: hit.place.y,
+        z: hit.place.z,
+        canPlace,
+      });
+
       if (leftMouseDown.current) {
+        audio.playMineTick();
         const mined = damageBlock(hit.block.x, hit.block.y, hit.block.z, delta);
         if (mined !== null) {
+          audio.playBreak();
           setBursts((current) => [...current, ...createBurst(hit.point, BLOCK_PALETTE[mined])]);
         }
       }
@@ -223,16 +262,44 @@ export function CaveWorld() {
     );
   });
 
+  const torchPositions = getTorchPositions(camera.position.z);
+
   return (
     <>
-      <ambientLight intensity={0.25} color="#d6b48f" />
-      <hemisphereLight intensity={0.45} color="#f7d8b3" groundColor="#18110f" />
-      <pointLight position={[camera.position.x, PLAYER_HEIGHT + 0.6, camera.position.z + 0.2]} intensity={4} distance={8} color="#ffd2a1" />
+      <ambientLight intensity={0.18} color="#c89d72" />
+      <hemisphereLight intensity={0.3} color="#f0b780" groundColor="#120d0c" />
+      <pointLight position={[camera.position.x, PLAYER_HEIGHT + 0.6, camera.position.z + 0.2]} intensity={2.8} distance={7} color="#ffd2a1" />
 
       <ChunkMeshes />
       <TargetOutline />
       <DamageOverlay />
       <HeldPickaxe />
+
+      {placementPreview && (
+        <mesh position={[placementPreview.x + 0.5, placementPreview.y + 0.5, placementPreview.z + 0.5]}>
+          <boxGeometry args={[1.02, 1.02, 1.02]} />
+          <meshBasicMaterial
+            color={placementPreview.canPlace ? "#8de1b5" : "#f66f53"}
+            transparent
+            opacity={0.24}
+            wireframe
+          />
+        </mesh>
+      )}
+
+      {torchPositions.map((torch, index) => (
+        <group key={`${torch.x}:${torch.y}:${torch.z}:${index}`} position={[torch.x, torch.y, torch.z]}>
+          <mesh position={[0, -0.1, 0]}>
+            <boxGeometry args={[0.14, 0.78, 0.14]} />
+            <meshStandardMaterial color="#7d4f29" />
+          </mesh>
+          <mesh position={[0, 0.38, 0]}>
+            <boxGeometry args={[0.18, 0.16, 0.18]} />
+            <meshStandardMaterial color="#ffb46d" emissive="#ff9a3d" emissiveIntensity={1.2} />
+          </mesh>
+          <pointLight position={[0, 0.45, 0]} intensity={7} distance={10} color="#ff9d57" />
+        </group>
+      ))}
 
       {bursts.map((particle) => (
         <mesh key={particle.id} position={particle.position}>

@@ -22,11 +22,67 @@ function editKey(x: number, y: number, z: number) {
 }
 
 function tunnelCenterX(z: number) {
-  return Math.round(Math.sin(z * 0.08) * 3 + Math.sin(z * 0.035 + 2.4) * 2);
+  return Math.round(Math.sin(z * 0.08) * 4 + Math.sin(z * 0.035 + 2.4) * 2.5);
 }
 
 function tunnelCenterY(z: number) {
-  return 3 + Math.round(Math.sin(z * 0.05 + 0.8) * 0.6);
+  return 3 + Math.round(Math.sin(z * 0.05 + 0.8) * 0.8 + Math.sin(z * 0.017) * 0.6);
+}
+
+function branchDescriptor(segment: number, direction: -1 | 1) {
+  const activation = hash3(segment * direction, direction, 9);
+  if (activation < 0.48) {
+    return null;
+  }
+
+  const startZ = segment * 18 + 10;
+  const startX = tunnelCenterX(startZ);
+  const startY = tunnelCenterY(startZ);
+  const length = 7 + Math.floor(hash3(segment, direction, 4) * 8);
+  const tilt = (hash3(segment, direction, 7) - 0.5) * 1.8;
+
+  return {
+    startX,
+    startY,
+    startZ,
+    length,
+    direction,
+    tilt,
+  };
+}
+
+function isBranchAir(x: number, y: number, z: number) {
+  const segment = Math.floor(z / 18);
+
+  for (let offset = -1; offset <= 1; offset += 1) {
+    for (const direction of [-1, 1] as const) {
+      const branch = branchDescriptor(segment + offset, direction);
+      if (!branch) {
+        continue;
+      }
+
+      const relativeX = (x - branch.startX) * direction;
+      if (relativeX < 2 || relativeX > branch.length + 2) {
+        continue;
+      }
+
+      const depthCurve = branch.startY + Math.sin(relativeX * 0.28 + branch.tilt) * 0.9;
+      const localZ = Math.abs(z - (branch.startZ + relativeX * branch.tilt));
+      const localY = y - depthCurve;
+      if (localZ * localZ / 5.4 + localY * localY / 3.6 < 1.15) {
+        return true;
+      }
+
+      if (relativeX > branch.length * 0.75) {
+        const pocketX = relativeX - branch.length * 0.85;
+        if (pocketX * pocketX / 8 + localZ * localZ / 4 + localY * localY / 5 < 1) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
 }
 
 function isTunnelAir(x: number, y: number, z: number) {
@@ -34,11 +90,12 @@ function isTunnelAir(x: number, y: number, z: number) {
   const centerY = tunnelCenterY(z);
   const dx = Math.abs(x - centerX);
   const dy = y - centerY;
-  const radius = 2.85 + Math.sin(z * 0.06) * 0.35;
+  const radius = 2.9 + Math.sin(z * 0.06) * 0.45;
 
   const mainTunnel = dx * dx / 7.2 + dy * dy / 3.8 < radius;
   const sidePocket = hash3(Math.floor(x / 3), y, Math.floor(z / 5)) > 0.965 && dx < 4 && dy > -1;
-  return mainTunnel || sidePocket;
+  const branchTunnel = isBranchAir(x, y, z);
+  return mainTunnel || sidePocket || branchTunnel;
 }
 
 function chooseOre(x: number, y: number, z: number): BlockId {
@@ -182,4 +239,23 @@ export function createInitialWorld(): WorldData {
   const world: WorldData = { chunks: {}, edits: {} };
   ensureWorldAround(world, 0, 2);
   return world;
+}
+
+export function getTorchPositions(playerZ: number) {
+  const torches: Array<{ x: number; y: number; z: number }> = [];
+  const startZ = Math.floor((playerZ - 28) / 8) * 8;
+  const endZ = Math.floor((playerZ + 28) / 8) * 8;
+
+  for (let z = startZ; z <= endZ; z += 8) {
+    const centerX = tunnelCenterX(z);
+    const centerY = tunnelCenterY(z);
+    const side = hash3(z, 0, 4) > 0.5 ? -1 : 1;
+    torches.push({
+      x: centerX + side * 2.3,
+      y: centerY + 0.2,
+      z,
+    });
+  }
+
+  return torches;
 }

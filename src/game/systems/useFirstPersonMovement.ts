@@ -1,8 +1,9 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { PLAYER_HEIGHT, PLAYER_RADIUS, MOVE_SPEED } from "../core/config";
+import { PLAYER_HEIGHT, MOVE_SPEED } from "../core/config";
 import { useGameStore } from "../store/useGameStore";
+import { isBodyBlocked } from "./collision";
 
 type KeyState = {
   forward: boolean;
@@ -80,23 +81,20 @@ export function useFirstPersonMovement() {
     next.addScaledVector(right, MOVE_SPEED * delta);
     next.y = PLAYER_HEIGHT;
 
-    const samples = [
-      [next.x + PLAYER_RADIUS, 1.1, next.z + PLAYER_RADIUS],
-      [next.x - PLAYER_RADIUS, 1.1, next.z + PLAYER_RADIUS],
-      [next.x + PLAYER_RADIUS, 1.1, next.z - PLAYER_RADIUS],
-      [next.x - PLAYER_RADIUS, 1.1, next.z - PLAYER_RADIUS],
-      [next.x + PLAYER_RADIUS, 2.8, next.z + PLAYER_RADIUS],
-      [next.x - PLAYER_RADIUS, 2.8, next.z + PLAYER_RADIUS],
-      [next.x + PLAYER_RADIUS, 2.8, next.z - PLAYER_RADIUS],
-      [next.x - PLAYER_RADIUS, 2.8, next.z - PLAYER_RADIUS],
-    ] as const;
-
-    const blocked = samples.some(([x, y, z]) => {
-      return getBlock(Math.floor(x), Math.floor(y), Math.floor(z)) !== 0;
-    });
-
-    if (!blocked) {
+    if (!isBodyBlocked(next.x, next.z, getBlock)) {
       camera.position.copy(next);
+      return;
+    }
+
+    const slideX = new THREE.Vector3(next.x, PLAYER_HEIGHT, camera.position.z);
+    if (!isBodyBlocked(slideX.x, slideX.z, getBlock)) {
+      camera.position.copy(slideX);
+      return;
+    }
+
+    const slideZ = new THREE.Vector3(camera.position.x, PLAYER_HEIGHT, next.z);
+    if (!isBodyBlocked(slideZ.x, slideZ.z, getBlock)) {
+      camera.position.copy(slideZ);
     }
   });
 }
